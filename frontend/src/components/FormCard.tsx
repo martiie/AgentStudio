@@ -8,7 +8,7 @@ type FormCardProps = {
 
 export function FormCard({ title, description, children }: FormCardProps) {
   return (
-    <section className="panel">
+    <section className="panel form-card-panel">
       <div className="panel-header">
         <div>
           <h2>{title}</h2>

@@ -63,6 +63,20 @@ Then open:
 http://localhost:5298
 ```
 
+To change the port after publish without rebuilding, use either option below:
+
+```bat
+.\publish\AgentStudio\start-agentstudio.bat 8080
+```
+
+or edit `publish/AgentStudio/appsettings.json` and change `Server.Port`.
+
+If you already know the port at publish time, you can bake it in directly:
+
+```powershell
+.\publish.ps1 -Port 8080
+```
+
 ### Backend
 
 ```powershell
@@ -71,6 +85,8 @@ dotnet run
 ```
 
 The API starts on `http://localhost:5298`.
+
+You can change the backend port without code changes by editing `backend/AgentStudio.Api/appsettings.json` and updating `Server.Port`. For one-off runs you can also set `ASPNETCORE_URLS`, for example `http://localhost:8080`.
 
 To switch from the local in-memory store to PostgreSQL, set `DatabaseProvider` to `Postgres` in `backend/AgentStudio.Api/appsettings.json` and update the `ConnectionStrings:Postgres` value.
 
@@ -83,6 +99,8 @@ npm run dev
 ```
 
 The app starts on `http://127.0.0.1:5173` and calls the API at `http://localhost:5298/api` by default.
+
+If your backend runs on another local port during frontend development, set `VITE_BACKEND_PORT` or `VITE_API_URL` before `npm run dev`.
 
 ## Main features
 

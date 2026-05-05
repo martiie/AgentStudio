@@ -63,6 +63,59 @@ export type GeneratedFile = {
   fileType: string
 }
 
+export type DetectedWorkspaceItem = {
+  fileName: string
+  fullPath: string
+  relativePath: string
+  suggestedName: string
+  kind: 'agent' | 'skill'
+  content: string
+  role?: string | null
+  description?: string | null
+  modelPreference?: string | null
+  toolsAllowed: string[]
+  instructions?: string | null
+  tags: string[]
+  purpose?: string | null
+  triggerCondition?: string | null
+  steps: string[]
+  examples: string[]
+}
+
+export type WorkspaceScanResult = {
+  directoryPath: string
+  suggestedProjectName: string
+  suggestedTechStack: string
+  suggestedFolderStructure: string
+  suggestedImportantCommands: string
+  agents: DetectedWorkspaceItem[]
+  skills: DetectedWorkspaceItem[]
+  notes: string[]
+  claude?: ParsedClaudeWorkspace | null
+}
+
+export type ParsedClaudeWorkspace = {
+  relativePath: string
+  projectName?: string | null
+  techStack?: string | null
+  codingRules?: string | null
+  folderStructure?: string | null
+  importantCommands?: string | null
+  activeAgentNames: string[]
+  activeSkillNames: string[]
+  routingRules: ParsedClaudeRoutingRule[]
+}
+
+export type ParsedClaudeRoutingRule = {
+  priority: number
+  condition: string
+  targetAgentName: string
+}
+
+export type TerminalMode = 'powershell' | 'cmd'
+export type AppLanguage = 'en' | 'th'
+export type AppTheme = 'light' | 'dark'
+
 export type AppData = {
   agents: Agent[]
   skills: Skill[]

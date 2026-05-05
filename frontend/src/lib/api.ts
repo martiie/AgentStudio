@@ -1,11 +1,5 @@
-import type { Agent, GeneratedFile, ProjectProfile, RoutingRule, Skill } from '../types'
-
-const API_ROOT =
-  import.meta.env.VITE_API_URL ??
-  (typeof window !== 'undefined' &&
-  (window.location.port === '5173' || window.location.port === '4173')
-    ? 'http://localhost:5298/api'
-    : `${window.location.origin}/api`)
+import type { Agent, GeneratedFile, ProjectProfile, RoutingRule, Skill, WorkspaceScanResult } from '../types'
+import { API_ROOT } from './runtime'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
@@ -62,6 +56,8 @@ export const api = {
     skillIds: string[]
     routingRuleIds: string[]
   }) => request<GeneratedFile[]>('/generate/claude-md', { method: 'POST', body: JSON.stringify(payload) }),
+  scanWorkspace: (directoryPath: string) =>
+    request<WorkspaceScanResult>('/workspace/scan', { method: 'POST', body: JSON.stringify({ directoryPath }) }),
   exportFiles: (files: GeneratedFile[]) =>
     request('/export', { method: 'POST', body: JSON.stringify({ files }) }),
 }

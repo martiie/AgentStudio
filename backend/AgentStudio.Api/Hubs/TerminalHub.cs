@@ -3,20 +3,23 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace AgentStudio.Api.Hubs;
 
-public sealed class TerminalHub(ClaudeTerminalService terminalService) : Hub
+public sealed class TerminalHub(TerminalSessionService terminalService) : Hub
 {
-    public Task StartClaude(Guid projectProfileId) =>
-        terminalService.StartClaudeAsync(Context.ConnectionId, projectProfileId);
+    public Task StartTerminal(Guid projectProfileId, string terminalType, int cols, int rows) =>
+        terminalService.StartTerminalAsync(Context.ConnectionId, projectProfileId, terminalType, cols, rows);
 
     public Task SendInput(string input) =>
         terminalService.SendInputAsync(Context.ConnectionId, input);
 
-    public Task StopClaude() =>
-        terminalService.StopClaudeAsync(Context.ConnectionId);
+    public Task ResizeTerminal(int cols, int rows) =>
+        terminalService.ResizeTerminalAsync(Context.ConnectionId, cols, rows);
+
+    public Task StopTerminal() =>
+        terminalService.StopTerminalAsync(Context.ConnectionId);
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        await terminalService.StopClaudeAsync(Context.ConnectionId);
+        await terminalService.StopTerminalAsync(Context.ConnectionId);
         await base.OnDisconnectedAsync(exception);
     }
 }
