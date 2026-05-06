@@ -13,10 +13,10 @@ export function Sidebar({ currentPage, onSelect, pages, eyebrow, tipTitle, tipTe
   return (
     <aside className="sidebar">
       <div className="brand-card">
-        <div className="brand-mark">AS</div>
+        <div className="brand-mark">HQ</div>
         <div>
           <p className="eyebrow">{eyebrow}</p>
-          <h1>Agent Studio</h1>
+          <h1>Agent Office</h1>
         </div>
       </div>
 

@@ -9,6 +9,7 @@ type ProjectTerminalProps = {
   profiles: ProjectProfile[]
   selectedProfileId: string
   onSelectProfile: (profileId: string) => void
+  currentProjectPath?: string
   onStatusMessage?: (message: string) => void
   language: AppLanguage
   visible: boolean
@@ -37,6 +38,7 @@ export function ProjectTerminal({
   profiles,
   selectedProfileId,
   onSelectProfile,
+  currentProjectPath,
   onStatusMessage,
   language,
   visible,
@@ -60,7 +62,7 @@ export function ProjectTerminal({
   const isThai = language === 'th'
   const shellOptions: Record<TerminalMode, string> = {
     powershell: 'PowerShell',
-    cmd: isThai ? 'Command Prompt' : 'Command Prompt',
+    cmd: 'Command Prompt',
   }
 
   useEffect(() => {
@@ -81,8 +83,8 @@ export function ProjectTerminal({
       terminal.writeln(isThai ? 'Project Terminal พร้อมใช้งานแล้ว' : 'Project Terminal ready.')
       terminal.writeln(
         isThai
-          ? 'เลือกโปรเจ็กต์ เลือก PowerShell หรือ cmd แล้วกด "Start Terminal" ได้เลย'
-          : 'Choose a project profile, select PowerShell or cmd, then click "Start Terminal".',
+          ? 'เลือก project path แล้วกด "Start Terminal" ได้เลย'
+          : 'Choose a project path, then click "Start Terminal".',
       )
     }
 
@@ -190,7 +192,7 @@ export function ProjectTerminal({
       connectionRef.current = null
       terminalRef.current = null
     }
-  }, [onStatusMessage])
+  }, [isThai, onStatusMessage])
 
   useEffect(() => {
     if (visible) {
@@ -199,8 +201,9 @@ export function ProjectTerminal({
   }, [visible])
 
   async function startTerminal() {
-    if (!selectedProfileId) {
-      terminalRef.current?.writeln(`\r\n[error] ${isThai ? 'กรุณาเลือก project profile ก่อน' : 'Select a project profile first.'}`)
+    const projectPath = currentProjectPath?.trim() || selectedProfile?.projectPath?.trim() || ''
+    if (!projectPath) {
+      terminalRef.current?.writeln(`\r\n[error] ${isThai ? 'กรุณาเลือก project path ก่อน' : 'Select a project path first.'}`)
       return
     }
 
@@ -211,8 +214,8 @@ export function ProjectTerminal({
     }
 
     const terminalLabel = shellOptions[terminalMode]
-    terminalRef.current?.writeln(`\r\n[start] Launching ${terminalLabel} in ${selectedProfile?.projectPath ?? 'selected project'} ...`)
-    await connection.invoke('StartTerminal', selectedProfileId, terminalMode, terminalSize.cols, terminalSize.rows)
+    terminalRef.current?.writeln(`\r\n[start] Launching ${terminalLabel} in ${projectPath} ...`)
+    await connection.invoke('StartTerminalAtPath', projectPath, terminalMode, terminalSize.cols, terminalSize.rows)
   }
 
   async function stopTerminal() {
@@ -235,7 +238,7 @@ export function ProjectTerminal({
         <div className="terminal-toolbar">
           <label className="terminal-select">
             {isThai ? 'โปรเจ็กต์' : 'Project profile'}
-            <select value={selectedProfileId} onChange={(event) => onSelectProfile(event.target.value)}>
+            <select value={selectedProfileId} onChange={(event) => onSelectProfile(event.target.value)} disabled={Boolean(currentProjectPath?.trim())}>
               <option value="">{isThai ? 'เลือก project profile' : 'Select a project profile'}</option>
               {profiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
@@ -263,7 +266,7 @@ export function ProjectTerminal({
               type="button"
               className="primary-button"
               onClick={() => void startTerminal()}
-              disabled={!selectedProfileId || connectionStatus !== 'Connected'}
+              disabled={!(currentProjectPath?.trim() || selectedProfileId) || connectionStatus !== 'Connected'}
             >
               {isThai ? 'เริ่ม Terminal' : 'Start Terminal'}
             </button>
@@ -278,7 +281,7 @@ export function ProjectTerminal({
 
         <div className="terminal-path-card">
           <strong>{isThai ? 'พาธโปรเจ็กต์ปัจจุบัน' : 'Current project path'}</strong>
-          <code>{activeProjectPath || selectedProfile?.projectPath || (isThai ? 'ยังไม่ได้เลือก project profile' : 'No project profile selected')}</code>
+          <code>{activeProjectPath || currentProjectPath || selectedProfile?.projectPath || (isThai ? 'ยังไม่ได้เลือก project path' : 'No project path selected')}</code>
         </div>
       </section>
 

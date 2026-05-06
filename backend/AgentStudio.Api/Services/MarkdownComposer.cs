@@ -12,6 +12,9 @@ public sealed class MarkdownComposer
         builder.AppendLine();
         builder.AppendLine($"**Role:** {agent.Role}");
         builder.AppendLine();
+        builder.AppendLine("## Office Responsibility");
+        builder.AppendLine("This file describes one office staff member who reports up through `CLAUDE.md`.");
+        builder.AppendLine();
         builder.AppendLine("## Description");
         builder.AppendLine(agent.Description);
         builder.AppendLine();
@@ -66,6 +69,9 @@ public sealed class MarkdownComposer
         var builder = new StringBuilder();
         builder.AppendLine("# CLAUDE.md");
         builder.AppendLine();
+        builder.AppendLine("## Office Leadership");
+        builder.AppendLine("`CLAUDE.md` is the office manager. It keeps the shared context, sets the rules, and delegates work to the right specialist files in `.claude/agents/`.");
+        builder.AppendLine();
         builder.AppendLine("## Project Context");
         if (profile is null)
         {
@@ -87,7 +93,7 @@ public sealed class MarkdownComposer
         }
 
         builder.AppendLine();
-        builder.AppendLine("## Active Agents");
+        builder.AppendLine("## Office Staff");
         foreach (var agent in agents.OrderBy(x => x.Name))
         {
             builder.AppendLine($"- **{agent.Name}**: {agent.Role} ({agent.ModelPreference})");
@@ -109,7 +115,13 @@ public sealed class MarkdownComposer
         }
 
         builder.AppendLine();
+        builder.AppendLine("## Delegation Notes");
+        builder.AppendLine("- `CLAUDE.md` should assign one primary owner per task.");
+        builder.AppendLine("- Pull in support staff only when a task crosses specialties.");
+        builder.AppendLine("- Keep handoffs short, explicit, and tied to files or commands.");
+        builder.AppendLine();
         builder.AppendLine("## File Conventions");
+        builder.AppendLine("- `CLAUDE.md` is the boss brief for the whole office.");
         builder.AppendLine("- Agent files live in `.claude/agents/`.");
         builder.AppendLine("- Skill files live in `.claude/skills/`.");
         builder.AppendLine("- Keep instructions concise, task-specific, and easy to scan.");

@@ -12,7 +12,7 @@ export function MarkdownPreview({ title, markdown, path }: MarkdownPreviewProps)
       <div className="panel-header">
         <div>
           <h2>{title}</h2>
-          <p>{path ?? 'Live markdown preview with all the crunchy details'}</p>
+          {path ? <p>{path}</p> : null}
         </div>
       </div>
       <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: markdownToHtml(markdown) }} />

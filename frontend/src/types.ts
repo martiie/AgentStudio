@@ -1,5 +1,6 @@
 export type PageKey =
   | 'dashboard'
+  | 'profile'
   | 'agents'
   | 'skills'
   | 'builder'
@@ -80,6 +81,7 @@ export type DetectedWorkspaceItem = {
   triggerCondition?: string | null
   steps: string[]
   examples: string[]
+  avatarRelativePath?: string | null
 }
 
 export type WorkspaceScanResult = {
@@ -92,6 +94,35 @@ export type WorkspaceScanResult = {
   skills: DetectedWorkspaceItem[]
   notes: string[]
   claude?: ParsedClaudeWorkspace | null
+}
+
+export type BrowseWorkspaceResult = {
+  directoryPath: string
+}
+
+export type RecentWorkspace = {
+  directoryPath: string
+  name: string
+  lastOpenedAt: string
+}
+
+export type RecentWorkspacesResult = {
+  items: RecentWorkspace[]
+}
+
+export type WorkspaceAvatarUploadResult = {
+  staffFolderName: string
+  avatarRelativePath: string
+}
+
+export type WorkspaceFileContent = {
+  relativePath: string
+  content: string
+  exists: boolean
+}
+
+export type WorkspaceFolderOpenResult = {
+  folderPath: string
 }
 
 export type ParsedClaudeWorkspace = {

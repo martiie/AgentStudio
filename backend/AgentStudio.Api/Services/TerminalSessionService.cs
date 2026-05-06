@@ -15,6 +15,9 @@ public sealed class TerminalSessionService(IServiceScopeFactory scopeFactory, IH
 {
     private readonly ConcurrentDictionary<string, TerminalSession> _sessions = new();
 
+    public Task StartTerminalAtPathAsync(string connectionId, string projectPath, string terminalType, int cols, int rows) =>
+        StartTerminalCoreAsync(connectionId, projectPath, terminalType, cols, rows, "Current workspace");
+
     public async Task StartTerminalAsync(string connectionId, Guid projectProfileId, string terminalType, int cols, int rows)
     {
         await StopTerminalAsync(connectionId);
@@ -31,57 +34,7 @@ public sealed class TerminalSessionService(IServiceScopeFactory scopeFactory, IH
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(profile.ProjectPath))
-        {
-            await SendStatusAsync(connectionId, "error", "Selected project profile does not have a project path.");
-            return;
-        }
-
-        if (!Directory.Exists(profile.ProjectPath))
-        {
-            await SendStatusAsync(connectionId, "error", $"Project path does not exist: {profile.ProjectPath}");
-            return;
-        }
-
-        if (!TryGetLaunchConfig(terminalType, out var launchConfig))
-        {
-            await SendStatusAsync(connectionId, "error", $"Unsupported terminal type: {terminalType}", profile.ProjectPath);
-            return;
-        }
-
-        if (!OperatingSystem.IsWindows())
-        {
-            await SendStatusAsync(connectionId, "error", "PTY mode is currently supported only on Windows.", profile.ProjectPath);
-            return;
-        }
-
-        var terminalSize = NormalizeSize(cols, rows);
-        WindowsPtyProcess? ptyProcess = null;
-        try
-        {
-            ptyProcess = WindowsPtyProcess.Start(launchConfig.CommandLine, profile.ProjectPath, terminalSize.cols, terminalSize.rows);
-            var session = new TerminalSession(ptyProcess, profile.ProjectPath, launchConfig.DisplayName);
-            _sessions[connectionId] = session;
-
-            session.OutputPump = PumpOutputAsync(connectionId, session);
-            session.ExitWatcher = WatchForExitAsync(connectionId, session);
-
-            await SendStatusAsync(connectionId, "running", $"{launchConfig.DisplayName} started.", profile.ProjectPath);
-        }
-        catch (Win32Exception)
-        {
-            ptyProcess?.Dispose();
-            await SendStatusAsync(
-                connectionId,
-                "error",
-                $"{launchConfig.DisplayName} was not found on this machine.",
-                profile.ProjectPath);
-        }
-        catch (Exception exception)
-        {
-            ptyProcess?.Dispose();
-            await SendStatusAsync(connectionId, "error", $"Unable to start {launchConfig.DisplayName}: {exception.Message}", profile.ProjectPath);
-        }
+        await StartTerminalCoreAsync(connectionId, profile.ProjectPath, terminalType, cols, rows, profile.ProjectName);
     }
 
     public async Task SendInputAsync(string connectionId, string input)
@@ -231,6 +184,59 @@ public sealed class TerminalSessionService(IServiceScopeFactory scopeFactory, IH
         }
 
         await SendStatusAsync(connectionId, "stopped", message, session.ProjectPath);
+    }
+
+    private async Task StartTerminalCoreAsync(string connectionId, string? projectPath, string terminalType, int cols, int rows, string projectLabel)
+    {
+        await StopTerminalAsync(connectionId);
+
+        if (string.IsNullOrWhiteSpace(projectPath))
+        {
+            await SendStatusAsync(connectionId, "error", $"{projectLabel} does not have a project path.");
+            return;
+        }
+
+        if (!Directory.Exists(projectPath))
+        {
+            await SendStatusAsync(connectionId, "error", $"Project path does not exist: {projectPath}");
+            return;
+        }
+
+        if (!TryGetLaunchConfig(terminalType, out var launchConfig))
+        {
+            await SendStatusAsync(connectionId, "error", $"Unsupported terminal type: {terminalType}", projectPath);
+            return;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            await SendStatusAsync(connectionId, "error", "PTY mode is currently supported only on Windows.", projectPath);
+            return;
+        }
+
+        var terminalSize = NormalizeSize(cols, rows);
+        WindowsPtyProcess? ptyProcess = null;
+        try
+        {
+            ptyProcess = WindowsPtyProcess.Start(launchConfig.CommandLine, projectPath, terminalSize.cols, terminalSize.rows);
+            var session = new TerminalSession(ptyProcess, projectPath, launchConfig.DisplayName);
+            _sessions[connectionId] = session;
+
+            session.OutputPump = PumpOutputAsync(connectionId, session);
+            session.ExitWatcher = WatchForExitAsync(connectionId, session);
+
+            await SendStatusAsync(connectionId, "running", $"{launchConfig.DisplayName} started in {projectLabel}.", projectPath);
+        }
+        catch (Win32Exception)
+        {
+            ptyProcess?.Dispose();
+            await SendStatusAsync(connectionId, "error", $"{launchConfig.DisplayName} was not found on this machine.", projectPath);
+        }
+        catch (Exception exception)
+        {
+            ptyProcess?.Dispose();
+            await SendStatusAsync(connectionId, "error", $"Unable to start {launchConfig.DisplayName}: {exception.Message}", projectPath);
+        }
     }
 
     private static (int cols, int rows) NormalizeSize(int cols, int rows)

@@ -110,4 +110,4 @@ If your backend runs on another local port during frontend development, set `VIT
 - Save project profiles and routing rules
 - Preview generated markdown before export
 - Copy generated file content and target paths
-- Start from built-in templates for common agent roles
+- Start from built-in office-style templates where `CLAUDE.md` leads specialist staff files

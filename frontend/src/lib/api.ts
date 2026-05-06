@@ -1,10 +1,11 @@
-import type { Agent, GeneratedFile, ProjectProfile, RoutingRule, Skill, WorkspaceScanResult } from '../types'
+import type { Agent, BrowseWorkspaceResult, GeneratedFile, ProjectProfile, RecentWorkspacesResult, RoutingRule, Skill, WorkspaceAvatarUploadResult, WorkspaceFileContent, WorkspaceFolderOpenResult, WorkspaceScanResult } from '../types'
 import { API_ROOT } from './runtime'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData
   const response = await fetch(`${API_ROOT}${path}`, {
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -22,6 +23,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  browseWorkspace: () => request<BrowseWorkspaceResult | undefined>('/workspace/browse'),
+  getRecentWorkspaces: () => request<RecentWorkspacesResult>('/workspace/recent'),
   getAgents: () => request<Agent[]>('/agents'),
   createAgent: (payload: Partial<Agent>) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(payload) }),
@@ -58,6 +61,25 @@ export const api = {
   }) => request<GeneratedFile[]>('/generate/claude-md', { method: 'POST', body: JSON.stringify(payload) }),
   scanWorkspace: (directoryPath: string) =>
     request<WorkspaceScanResult>('/workspace/scan', { method: 'POST', body: JSON.stringify({ directoryPath }) }),
+  uploadStaffAvatar: (payload: { directoryPath: string; staffName: string; staffFolderName?: string; file: File }) => {
+    const formData = new FormData()
+    formData.append('directoryPath', payload.directoryPath)
+    formData.append('staffName', payload.staffName)
+    if (payload.staffFolderName) {
+      formData.append('staffFolderName', payload.staffFolderName)
+    }
+    formData.append('file', payload.file)
+
+    return request<WorkspaceAvatarUploadResult>('/workspace/staff-avatar', { method: 'POST', body: formData })
+  },
+  getWorkspaceFile: (directoryPath: string, relativePath: string) =>
+    request<WorkspaceFileContent>(`/workspace/file?directoryPath=${encodeURIComponent(directoryPath)}&relativePath=${encodeURIComponent(relativePath)}`),
+  saveWorkspaceFile: (payload: { directoryPath: string; relativePath: string; content: string }) =>
+    request<WorkspaceFileContent>('/workspace/file', { method: 'POST', body: JSON.stringify(payload) }),
+  openWorkspaceFolder: (payload: { directoryPath: string; relativePath: string; kind: 'agent' | 'skill' }) =>
+    request<WorkspaceFolderOpenResult>('/workspace/open-folder', { method: 'POST', body: JSON.stringify(payload) }),
+  workspaceAssetUrl: (directoryPath: string, relativePath: string) =>
+    `${API_ROOT}/workspace/asset?directoryPath=${encodeURIComponent(directoryPath)}&relativePath=${encodeURIComponent(relativePath)}`,
   exportFiles: (files: GeneratedFile[]) =>
     request('/export', { method: 'POST', body: JSON.stringify({ files }) }),
 }

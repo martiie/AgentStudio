@@ -1,10 +1,22 @@
+using System.Diagnostics;
 using System.Text.Json;
 using AgentStudio.Api.Dtos;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace AgentStudio.Api.Services;
 
 public sealed class WorkspaceScannerService
 {
+    private static readonly object RecentWorkspacesLock = new();
+    private static readonly HashSet<string> AllowedAvatarExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif"
+    };
+
     public WorkspaceScanResultDto Scan(string directoryPath)
     {
         var normalizedPath = directoryPath.Trim();
@@ -20,6 +32,7 @@ public sealed class WorkspaceScannerService
 
         var root = new DirectoryInfo(normalizedPath);
         var notes = new List<string>();
+        RememberWorkspace(root.FullName);
 
         var agentsDirectory = ResolveDirectory(root, ".claude", "agents")
             ?? ResolveDirectory(root, "agents");
@@ -93,9 +106,208 @@ public sealed class WorkspaceScannerService
                     parsed.Purpose,
                     parsed.TriggerCondition,
                     parsed.Steps,
-                    parsed.Examples);
+                    parsed.Examples,
+                    FindAvatarRelativePath(rootPath, directory.FullName, file));
             })
             .ToList();
+    }
+
+    public string? BrowseForDirectory()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Folder browse is currently available on Windows only.");
+        }
+
+        const string script = """
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = 'Select a project folder'
+$dialog.Filter = 'Folders|*.folder'
+$dialog.CheckFileExists = $false
+$dialog.CheckPathExists = $true
+$dialog.ValidateNames = $false
+$dialog.FileName = 'Select This Folder'
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Out.Write([System.IO.Path]::GetDirectoryName($dialog.FileName))
+}
+""";
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "powershell",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.StartInfo.ArgumentList.Add("-NoProfile");
+        process.StartInfo.ArgumentList.Add("-STA");
+        process.StartInfo.ArgumentList.Add("-Command");
+        process.StartInfo.ArgumentList.Add(script);
+
+        process.Start();
+        var selectedPath = process.StandardOutput.ReadToEnd().Trim();
+        var errorOutput = process.StandardError.ReadToEnd().Trim();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(errorOutput))
+        {
+            throw new InvalidOperationException($"Could not open the folder browser. {errorOutput}");
+        }
+
+        if (string.IsNullOrWhiteSpace(selectedPath))
+        {
+            return null;
+        }
+
+        var normalizedPath = NormalizeDirectoryPath(selectedPath);
+        RememberWorkspace(normalizedPath);
+        return normalizedPath;
+    }
+
+    public RecentWorkspacesResponseDto GetRecentWorkspaces()
+    {
+        var items = ReadRecentWorkspaces()
+            .Where(item => Directory.Exists(item.DirectoryPath))
+            .OrderByDescending(item => item.LastOpenedAt)
+            .Take(12)
+            .Select(item => new RecentWorkspaceDto(item.DirectoryPath, Path.GetFileName(item.DirectoryPath), item.LastOpenedAt))
+            .ToList();
+
+        return new RecentWorkspacesResponseDto(items);
+    }
+
+    public WorkspaceAvatarUploadResponseDto SaveStaffAvatar(WorkspaceAvatarUploadRequest request)
+    {
+        var directoryPath = NormalizeDirectoryPath(request.DirectoryPath);
+        if (request.File is null || request.File.Length == 0)
+        {
+            throw new InvalidOperationException("Please choose an image file first.");
+        }
+
+        var extension = Path.GetExtension(request.File.FileName);
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedAvatarExtensions.Contains(extension))
+        {
+            throw new InvalidOperationException("Supported image formats are PNG, JPG, JPEG, WEBP, and GIF.");
+        }
+
+        var staffFolderName = !string.IsNullOrWhiteSpace(request.StaffFolderName)
+            ? ToSlug(request.StaffFolderName)
+            : ToSlug(request.StaffName);
+
+        if (string.IsNullOrWhiteSpace(staffFolderName))
+        {
+            throw new InvalidOperationException("Staff name is required for avatar uploads.");
+        }
+
+        var avatarDirectory = Path.Combine(directoryPath, ".claude", "agents", staffFolderName);
+        Directory.CreateDirectory(avatarDirectory);
+
+        foreach (var existingFile in Directory.GetFiles(avatarDirectory, "avatar.*", SearchOption.TopDirectoryOnly))
+        {
+            File.Delete(existingFile);
+        }
+
+        var avatarPath = Path.Combine(avatarDirectory, $"avatar{extension.ToLowerInvariant()}");
+        using var fileStream = File.Create(avatarPath);
+        request.File.CopyTo(fileStream);
+
+        return new WorkspaceAvatarUploadResponseDto(
+            staffFolderName,
+            Path.GetRelativePath(directoryPath, avatarPath).Replace('\\', '/'));
+    }
+
+    public (string FullPath, string ContentType) ResolveWorkspaceAsset(string directoryPath, string relativePath)
+    {
+        var rootPath = NormalizeDirectoryPath(directoryPath);
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            throw new InvalidOperationException("Relative path is required.");
+        }
+
+        var normalizedRelativePath = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(rootPath, normalizedRelativePath));
+        if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Requested asset is outside the selected workspace.");
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException($"Asset does not exist: {relativePath}");
+        }
+
+        var provider = new FileExtensionContentTypeProvider();
+        if (!provider.TryGetContentType(fullPath, out var contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        return (fullPath, contentType);
+    }
+
+    public WorkspaceFileContentDto ReadWorkspaceTextFile(string directoryPath, string relativePath)
+    {
+        var fullPath = ResolveWorkspacePath(directoryPath, relativePath, allowMissing: true);
+        if (!File.Exists(fullPath))
+        {
+            return new WorkspaceFileContentDto(relativePath.Replace('\\', '/'), string.Empty, false);
+        }
+
+        return new WorkspaceFileContentDto(
+            relativePath.Replace('\\', '/'),
+            File.ReadAllText(fullPath),
+            true);
+    }
+
+    public WorkspaceFileContentDto SaveWorkspaceTextFile(SaveWorkspaceFileRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            throw new InvalidOperationException("File content is required.");
+        }
+
+        var fullPath = ResolveWorkspacePath(request.DirectoryPath, request.RelativePath, allowMissing: true);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new InvalidOperationException("Could not resolve the file directory.");
+        }
+
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(fullPath, request.Content);
+
+        return new WorkspaceFileContentDto(
+            request.RelativePath.Replace('\\', '/'),
+            request.Content,
+            true);
+    }
+
+    public WorkspaceFolderOpenResponseDto OpenWorkspaceFolder(OpenWorkspaceFolderRequest request)
+    {
+        var folderPath = ResolveManagedFolderPath(request.DirectoryPath, request.RelativePath, request.Kind);
+        if (!Directory.Exists(folderPath))
+        {
+            throw new DirectoryNotFoundException($"Folder does not exist: {folderPath}");
+        }
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folderPath}\"",
+                UseShellExecute = true
+            }
+        };
+
+        process.Start();
+        return new WorkspaceFolderOpenResponseDto(folderPath);
     }
 
     private static ParsedWorkspaceMarkdown ParseMarkdownContent(string content, string kind)
@@ -321,6 +533,125 @@ public sealed class WorkspaceScannerService
                 : char.ToUpperInvariant(part[0]) + part[1..]));
     }
 
+    private static string? FindAvatarRelativePath(string rootPath, string agentsDirectoryPath, FileInfo markdownFile)
+    {
+        var avatarDirectory = Path.Combine(agentsDirectoryPath, Path.GetFileNameWithoutExtension(markdownFile.Name));
+        if (!Directory.Exists(avatarDirectory))
+        {
+            return null;
+        }
+
+        var avatarFile = new DirectoryInfo(avatarDirectory)
+            .GetFiles("avatar.*", SearchOption.TopDirectoryOnly)
+            .FirstOrDefault(file => AllowedAvatarExtensions.Contains(file.Extension));
+
+        return avatarFile is null
+            ? null
+            : Path.GetRelativePath(rootPath, avatarFile.FullName).Replace('\\', '/');
+    }
+
+    private static string NormalizeDirectoryPath(string directoryPath)
+    {
+        var normalizedPath = directoryPath.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            throw new InvalidOperationException("Directory path is required.");
+        }
+
+        if (!Directory.Exists(normalizedPath))
+        {
+            throw new DirectoryNotFoundException($"Directory does not exist: {normalizedPath}");
+        }
+
+        return Path.GetFullPath(normalizedPath);
+    }
+
+    private static string ResolveWorkspacePath(string directoryPath, string relativePath, bool allowMissing)
+    {
+        var rootPath = NormalizeDirectoryPath(directoryPath);
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            throw new InvalidOperationException("Relative path is required.");
+        }
+
+        var normalizedRelativePath = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(rootPath, normalizedRelativePath));
+        if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Requested file is outside the selected workspace.");
+        }
+
+        if (!allowMissing && !File.Exists(fullPath))
+        {
+            throw new FileNotFoundException($"File does not exist: {relativePath}");
+        }
+
+        return fullPath;
+    }
+
+    private static string ResolveManagedFolderPath(string directoryPath, string relativePath, string kind)
+    {
+        var markdownPath = ResolveWorkspacePath(directoryPath, relativePath, allowMissing: false);
+        var markdownDirectory = Path.GetDirectoryName(markdownPath);
+        if (string.IsNullOrWhiteSpace(markdownDirectory))
+        {
+            throw new InvalidOperationException("Could not resolve the markdown directory.");
+        }
+
+        if (string.Equals(kind, "agent", StringComparison.OrdinalIgnoreCase))
+        {
+            var dedicatedFolder = Path.Combine(markdownDirectory, Path.GetFileNameWithoutExtension(markdownPath));
+            return Directory.Exists(dedicatedFolder) ? dedicatedFolder : markdownDirectory;
+        }
+
+        return markdownDirectory;
+    }
+
+    private static string ToSlug(string value) =>
+        string.Join('-',
+            value
+                .ToLowerInvariant()
+                .Split([' ', '/', '\\', '_', '.'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private static void RememberWorkspace(string directoryPath)
+    {
+        lock (RecentWorkspacesLock)
+        {
+            var normalizedPath = Path.GetFullPath(directoryPath);
+            var items = ReadRecentWorkspaces()
+                .Where(item => !string.Equals(item.DirectoryPath, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                .Prepend(new RecentWorkspaceRecord(normalizedPath, DateTimeOffset.UtcNow))
+                .OrderByDescending(item => item.LastOpenedAt)
+                .Take(12)
+                .ToList();
+
+            var storePath = GetRecentWorkspacesStorePath();
+            Directory.CreateDirectory(Path.GetDirectoryName(storePath)!);
+            File.WriteAllText(storePath, JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true }));
+        }
+    }
+
+    private static List<RecentWorkspaceRecord> ReadRecentWorkspaces()
+    {
+        var storePath = GetRecentWorkspacesStorePath();
+        if (!File.Exists(storePath))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<RecentWorkspaceRecord>>(File.ReadAllText(storePath)) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string GetRecentWorkspacesStorePath() =>
+        Path.Combine(AppContext.BaseDirectory, "App_Data", "recent-workspaces.json");
+
     private static ParsedClaudeWorkspaceDto? ParseClaudeFile(DirectoryInfo root)
     {
         var claudePath = Path.Combine(root.FullName, "CLAUDE.md");
@@ -380,7 +711,7 @@ public sealed class WorkspaceScannerService
                         break;
                 }
             }
-            else if (currentSection == "Active Agents")
+            else if (currentSection is "Active Agents" or "Office Staff")
             {
                 activeAgents = ExtractBoldList(buffer);
             }
@@ -493,4 +824,6 @@ public sealed class WorkspaceScannerService
         public List<string> Steps { get; set; } = [];
         public List<string> Examples { get; set; } = [];
     }
+
+    private sealed record RecentWorkspaceRecord(string DirectoryPath, DateTimeOffset LastOpenedAt);
 }

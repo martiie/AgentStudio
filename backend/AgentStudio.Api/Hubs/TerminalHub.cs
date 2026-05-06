@@ -5,6 +5,9 @@ namespace AgentStudio.Api.Hubs;
 
 public sealed class TerminalHub(TerminalSessionService terminalService) : Hub
 {
+    public Task StartTerminalAtPath(string projectPath, string terminalType, int cols, int rows) =>
+        terminalService.StartTerminalAtPathAsync(Context.ConnectionId, projectPath, terminalType, cols, rows);
+
     public Task StartTerminal(Guid projectProfileId, string terminalType, int cols, int rows) =>
         terminalService.StartTerminalAsync(Context.ConnectionId, projectProfileId, terminalType, cols, rows);
 
