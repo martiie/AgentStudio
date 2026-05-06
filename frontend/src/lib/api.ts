@@ -12,7 +12,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`)
+    let message = `Request failed: ${response.status}`
+
+    try {
+      const errorPayload = (await response.json()) as { message?: string }
+      if (errorPayload?.message) {
+        message = errorPayload.message
+      }
+    } catch {
+      // Ignore parse errors and fall back to the status-based message.
+    }
+
+    throw new Error(message)
   }
 
   if (response.status === 204) {

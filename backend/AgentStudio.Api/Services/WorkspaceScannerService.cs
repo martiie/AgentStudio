@@ -120,16 +120,10 @@ public sealed class WorkspaceScannerService
         }
 
         const string script = """
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = 'Select a project folder'
-$dialog.Filter = 'Folders|*.folder'
-$dialog.CheckFileExists = $false
-$dialog.CheckPathExists = $true
-$dialog.ValidateNames = $false
-$dialog.FileName = 'Select This Folder'
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Out.Write([System.IO.Path]::GetDirectoryName($dialog.FileName))
+$shell = New-Object -ComObject Shell.Application
+$folder = $shell.BrowseForFolder(0, 'Select a project folder', 0)
+if ($null -ne $folder) {
+    [Console]::Out.Write($folder.Self.Path)
 }
 """;
 

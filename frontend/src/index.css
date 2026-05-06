@@ -920,6 +920,23 @@ button {
   color: var(--heading);
 }
 
+.browse-desk-field {
+  width: min(720px, 100%);
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+}
+
+.browse-desk-field:focus {
+  outline: 2px solid rgba(88, 140, 117, 0.22);
+  outline-offset: 1px;
+  border-color: var(--accent-strong);
+}
+
 .browse-desk-copy p {
   margin: 2px 0 0;
   color: var(--muted);

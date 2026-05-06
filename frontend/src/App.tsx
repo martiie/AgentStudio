@@ -138,6 +138,14 @@ function buildProfileSections(card: WorkspaceCard | null): ProfileSection[] {
   ]
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return fallback
+}
+
 function App() {
   const [page, setPage] = useState<PageKey>('dashboard')
   const [busy, setBusy] = useState(false)
@@ -243,8 +251,8 @@ function App() {
       setWorkspaceDirectory(result.directoryPath)
       await scanWorkspace(result.directoryPath)
       await loadRecentWorkspaces()
-    } catch {
-      setMessage('Could not open the folder browser.')
+    } catch (error) {
+      setMessage(getErrorMessage(error, 'Could not open the folder browser.'))
     } finally {
       setBusy(false)
     }
@@ -388,7 +396,14 @@ function App() {
                 </span>
                 <div className="browse-desk-copy">
                   <strong>Project folder</strong>
-                  <p>{workspaceScan?.directoryPath || workspaceDirectory || 'No project folder selected yet.'}</p>
+                  <input
+                    type="text"
+                    className="browse-desk-field"
+                    placeholder="Paste or type a folder path, then click Open"
+                    value={workspaceDirectory}
+                    onChange={(event) => setWorkspaceDirectory(event.target.value)}
+                  />
+                  <p>{workspaceScan?.directoryPath || 'No project folder selected yet.'}</p>
                 </div>
               </div>
               <div className="button-row">
@@ -396,7 +411,7 @@ function App() {
                   Browse
                 </button>
                 <button type="button" className="secondary-button" onClick={() => void scanWorkspace()}>
-                  Refresh
+                  Open
                 </button>
               </div>
             </div>
